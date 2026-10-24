@@ -1,0 +1,45 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "precio luz casa",
+      "intents": [
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "PrecioHoyIntent",
+          "samples": [
+            "cuándo es más barata la luz hoy",
+            "precios de hoy",
+            "qué horas debo evitar hoy",
+            "precio de la electricidad hoy",
+            "cuándo pongo la lavadora hoy"
+          ]
+        },
+        {
+          "name": "PrecioMananaIntent",
+          "samples": [
+            "cuándo es más barata la luz mañana",
+            "precios de mañana",
+            "qué horas debo evitar mañana",
+            "precio de la electricidad mañana",
+            "cuándo pongo la lavadora mañana"
+          ]
+        }
+      ]
+    }
+  }
+}
