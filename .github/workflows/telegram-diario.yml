@@ -1,0 +1,56 @@
+name: Telegram · Aviso PVPC diario
+on:
+  schedule:
+    # 20:40 y 21:15 Madrid (verano/invierno). UTC fija y filtro horario en Python.
+    - cron: '40 18 * * *'
+    - cron: '15 19 * * *'
+    - cron: '40 19 * * *'
+    - cron: '15 20 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Prueba sin enviar mensajes'
+        required: true
+        default: true
+        type: boolean
+permissions:
+  contents: write
+concurrency:
+  group: envio-pvpc-diario
+  cancel-in-progress: false
+jobs:
+  informe:
+    # Inactivo hasta que el propietario configure TOKEN, canal y variable de activación.
+    if: ${{ vars.TELEGRAM_AUTOMATION_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      TZ: Europe/Madrid
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test de regresión local
+        run: python -m unittest discover -s tests -q
+      - name: Preparar y publicar (si datos completos)
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            python scripts/telegram_daily.py --dry-run
+          else
+            python scripts/telegram_daily.py
+          fi
+      - name: Guardar estado antirrepetición si cambió
+        run: |
+          if git status --porcelain -- .delivery-state.json | grep -q .; then
+            git config user.name 'Precio Luz Bot'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add .delivery-state.json
+            git commit -m 'Registro envío Telegram: evitar duplicados'
+            git push
+          fi
