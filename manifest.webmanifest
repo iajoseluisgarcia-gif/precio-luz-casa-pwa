@@ -1,0 +1,25 @@
+{
+  "name": "Precio Luz Casa · Telegram + WhatsApp",
+  "short_name": "Precio Luz",
+  "description": "Precio PVPC de hoy y mañana, Telegram automático y WhatsApp manual, 0 euros.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6fa",
+  "theme_color": "#102947",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
