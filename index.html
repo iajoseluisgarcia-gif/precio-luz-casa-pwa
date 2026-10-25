@@ -39,16 +39,17 @@ function expectedHours(day){
  function off(instant){const t=new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'shortOffset'}).formatToParts(instant).find(x=>x.type==='timeZoneName')?.value||'GMT';const hit=t.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);return hit?(hit[1]==='-'?-1:1)*(+hit[2]*60+ +(hit[3]||0)):0}
  return 24+(off(noonUTC)-off(nextNoonUTC))/60;
 }
-function validateDay(data,day){const valid=validate(data);if(valid.length!==expectedHours(day))throw Error('Día incompleto: '+valid.length+' horas, esperadas '+expectedHours(day));const target=Array.from({length:24},(_,h)=>h);if(expectedHours(day)===25)target.splice(3,0,2);if(expectedHours(day)===23)target.splice(2,1);if(valid.some((x,i)=>x.h!==target[i]))throw Error('Horarios incompletos o desordenados');return valid;}
+function validateDay(data,day){const valid=validate(data);if(valid.length!==expectedHours(day))throw Error('Día incompleto: '+valid.length+' horas, esperadas '+expectedHours(day));const target=Array.from({length:24},(_,h)=>h);if(expectedHours(day)===25)target.splice(2,0,2);if(expectedHours(day)===23)target.splice(2,1);if(valid.some((x,i)=>x.h!==target[i]))throw Error('Horarios incompletos o desordenados');return valid;}
 function validate(data){if(!Array.isArray(data)||data.length<23||data.length>25||data.some(x=>!Number.isInteger(x.h)||x.h<0||x.h>23||!Number.isFinite(x.price)||x.price<-2||x.price>5))throw Error('Estructura o precios no válidos');return data}
 async function fetchDay(day,key){
  const sources=[
+  {name:'Copia diaria PVPC verificada',url:`./data/${day}.json`,normalize:(j,d)=>{if(j.date!==d||!Array.isArray(j.slots))throw Error('Fecha');return j.slots.map(x=>({h:Number(x.h),price:Number(x.p),start:x.start||null}))}},
   {name:'Preciluz / Red Eléctrica',url:`https://preciluz.com/datos/precio-${key==='today'?'hoy':'manana'}.json`,normalize:normalizeP},
   {name:'EnergiAlert / PVPC',url:`https://energialert.com/v1/prices?date=${encodeURIComponent(day)}&market=pvpc`,normalize:normalizeE},
   {name:'Luz por Horas / REE',url:`https://luzporhoras.com/api/${key==='today'?'hoy':'manana'}.json`,normalize:normalizeL}
  ];
  if(expectedHours(day)!==24)sources.unshift(...sources.splice(1,1));
- for(const s of sources){try{return {source:s.name,data:validateDay(s.normalize(await getJSON(s.url),day),day),date:day,fetched:timeNow()}}catch(e){/* source not accessible or not published */}}
+ for(const s of sources){try{return {source:s.name,data:validateDay(s.normalize(await getJSON(s.url),day),day),date:day,fetched:timeNow()}}catch(e){console.warn('PVPC '+s.name+': '+e.message)}}
  throw Error('No hay precios verificables del '+day+' (fuentes no accesibles o todavía sin publicar)');
 }
 async function refresh(){const b=$('refresh');b.disabled=true;b.textContent='Comprobando…';$('status').textContent='Consultando las fuentes y validando las fechas…';$('status').className='status';const today=zonedDate(),tomorrow=zonedDate(1);const res=await Promise.allSettled([fetchDay(today,'today'),fetchDay(tomorrow,'tomorrow')]);state.data.today=res[0].status==='fulfilled'?res[0].value:null;state.data.tomorrow=res[1].status==='fulfilled'?res[1].value:null;state.failures=res.map((r,i)=>r.status==='rejected'?`${i?'Mañana':'Hoy'}: ${r.reason?.message||'sin datos'}`:null).filter(Boolean);
