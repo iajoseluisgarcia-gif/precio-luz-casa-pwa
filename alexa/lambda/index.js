@@ -81,26 +81,7 @@ const tariffColors = {
   middle: {text:'#FFC277', background:'#4A3019'}
 };
 
-function mixColor(from, to, amount) {
-  const channels = from.slice(1).match(/../g).map((channel, index) => {
-    const start = parseInt(channel, 16);
-    const end = parseInt(to.slice(1 + index * 2, 3 + index * 2), 16);
-    return Math.round(start + (end - start) * amount).toString(16).padStart(2, '0');
-  });
-  return '#' + channels.join('');
-}
-function middleColors(price, minimum, median, maximum) {
-  const orange = tariffColors.middle;
-  if (price === median) return orange;
-  const edge = price < median ? minimum : maximum;
-  const target = price < median ? tariffColors.low : tariffColors.high;
-  // Keep the solid green and red reserved for the three extreme hours.
-  const amount = 0.84 * Math.abs(price - median) / Math.abs(edge - median);
-  return {
-    text:mixColor(orange.text, target.text, amount),
-    background:mixColor(orange.background, target.background, amount)
-  };
-}
+const greenCeiling = 0.20;
 
 function groupSlots(slots, columns) {
   const groups = [];
@@ -145,7 +126,7 @@ function scheduleView() {
         {
           type:'Container', direction:'row', spacing:5, justifyContent:"${roundScreen ? 'center' : 'start'}",
           items:[
-            screenText('Más baratas', 14, tariffColors.low.text, {fontWeight:'700'}),
+            screenText('Hasta 20 ¢', 14, tariffColors.low.text, {fontWeight:'700'}),
             screenText('Intermedias', 14, tariffColors.middle.text, {fontWeight:'700', spacing:12}),
             screenText('Más caras', 14, tariffColors.high.text, {fontWeight:'700', spacing:12})
           ]
@@ -161,26 +142,16 @@ function scheduleView() {
     }
   };
 }
-function priceScreen(rows, day, label, now, next) {
-  const ranked = [...rows].sort((a,b) => a.p - b.p || a.t - b.t);
-  const cheap = ranked.slice(0,3);
-  const expensive = ranked.slice(-3);
-  const middle = ranked.slice(3,-3);
-  const minimum = middle[0].p;
-  const maximum = middle[middle.length - 1].p;
-  const median = (middle[Math.floor((middle.length - 1) / 2)].p + middle[Math.floor(middle.length / 2)].p) / 2;
-  const cheapTimes = new Set(cheap.map(row => row.t));
-  const expensiveTimes = new Set(expensive.map(row => row.t));
+function priceScreen(rows, day, label, next) {
+  const dailyMaximum = Math.max(...rows.map(row => row.p));
+  const orangeCeiling = (greenCeiling + dailyMaximum) / 2;
   const slots = rows.map(row => {
-    let colors;
-    if (cheapTimes.has(row.t)) colors = tariffColors.low;
-    else if (expensiveTimes.has(row.t)) colors = tariffColors.high;
-    else colors = middleColors(row.p, minimum, median, maximum);
-    return {range:screenRange(row, rows), price:cents(row.p), ...colors};
+    const band = row.p <= greenCeiling ? 'low' : row.p <= orangeCeiling ? 'middle' : 'high';
+    return {range:screenRange(row, rows), price:cents(row.p), ...tariffColors[band]};
   });
   const [, month, date] = day.split('-');
   const title = (label === 'hoy' ? 'Hoy' : 'Mañana') + ' · ' + date + '/' + month;
-  const nextHint = next && cheap[0].t + 3600000 <= now.getTime()
+  const nextHint = next
     ? 'Más barata de las que quedan: ' + screenRange(next, rows) + ' · ' + cents(next.p) + ' ¢/kWh'
     : '';
   return {
@@ -232,7 +203,7 @@ async function handle(event,now=new Date(),fetchJson=get) {
     }
     const result = speech(text+' Son precios PVPC peninsulares de energía sin impuestos; pueden ser distintos de tu contrato.');
     if(event.context?.System?.device?.supportedInterfaces?.['Alexa.Presentation.APL']){
-      result.response.directives = [priceScreen(rows, day, label, now, next)];
+      result.response.directives = [priceScreen(rows, day, label, next)];
     }
     return result;
   }catch(e){return speech('No puedo verificar los precios en este momento. Inténtalo después.');}
