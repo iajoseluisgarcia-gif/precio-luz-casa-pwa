@@ -66,94 +66,111 @@ function cents(p){return (p*100).toLocaleString('es-ES',{maximumFractionDigits:3
 function screenText(text, fontSize, color, extra = {}) {
   return {type:'Text', text, fontSize, color, maxLines:1, ...extra};
 }
+
 function screenRange(row, rows) {
-  const label = t => String(hourFormatter.format(new Date(t))).padStart(2, '0') + ':00';
+  const nextHour = Number(hourFormatter.format(new Date(row.t + 3600000)));
+  const endHour = row.h === 23 && nextHour === 0 ? 24 : nextHour;
+  const hourText = hour => String(hour).padStart(2, '0') + ':00';
   const repeats = rows.filter(item => item.h === row.h);
   const occurrence = repeats.length > 1 ? (repeats[0].t === row.t ? ' (1.ª)' : ' (2.ª)') : '';
-  return label(row.t) + '–' + label(row.t + 3600000) + occurrence;
+  return hourText(row.h) + '–' + hourText(endHour) + occurrence;
 }
-function pricePanel(title, color, backgroundColor, selected, allRows) {
-  const entries = selected.map((row, index) => ({
-    type:'Container',
-    direction:'row',
-    justifyContent:'spaceBetween',
-    alignItems:'center',
-    spacing:index ? '${viewport.height < 350 ? 5 : 12}' : 0,
-    items:[
-      screenText(screenRange(row, allRows), '${viewport.width < 700 ? 16 : 27}', '#FFFFFF', {fontWeight:'500'}),
-      screenText(cents(row.p), '${viewport.width < 700 ? 18 : 31}', color, {fontWeight:'700', spacing:6})
-    ]
-  }));
+const tariffColors = {
+  low: {text:'#75F5AF', background:'#12382E'},
+  high: {text:'#FFA49D', background:'#4A232B'},
+  neutral: {text:'#EEF2F8', background:'#202F43'}
+};
+
+function groupSlots(slots, columns) {
+  const groups = [];
+  for (let index = 0; index < slots.length; index += columns) {
+    const cards = slots.slice(index, index + columns);
+    while (cards.length < columns) cards.push({range:'', price:'', text:'#101A2A', background:'#101A2A'});
+    groups.push(cards);
+  }
+  return groups;
+}
+function scheduleView() {
+  const row = {
+    type:'Container', direction:'row', width:'100%', spacing:'${index > 0 ? 5 : 0}',
+    data:'${data}',
+    items:[{
+      type:'Frame', width:0, grow:1, spacing:'${index > 0 ? 6 : 0}',
+      height:'${viewport.height < 530 ? 36 : 48}', backgroundColor:'${data.background}', borderRadius:8,
+      item:{
+        type:'Container', width:'100%', height:'100%', direction:'row',
+        alignItems:'center', justifyContent:'spaceBetween', paddingLeft:9, paddingRight:9,
+        items:[
+          screenText('${data.range}', '${viewport.width < 1050 ? 14 : 17}', '${data.text}'),
+          screenText('${data.price}', '${viewport.width < 1050 ? 16 : 21}', '${data.text}', {fontWeight:'700', spacing:5})
+        ]
+      }
+    }]
+  };
   return {
-    type:'Frame', width:0, grow:1, height:'100%', backgroundColor, borderRadius:18,
+    type:'ScrollView', width:'100vw', height:'100vh',
+    bind:[{name:'roundScreen', value:"${viewport.shape == 'round'}"}],
     item:{
-      type:'Container', width:'100%', height:'100%',
-      padding:'${viewport.width < 700 ? 12 : 26}', justifyContent:'center',
+      type:'Container', width:'100%',
+      paddingLeft:"${roundScreen ? '13vw' : (viewport.width < 1050 ? 16 : 28)}",
+      paddingRight:"${roundScreen ? '13vw' : (viewport.width < 1050 ? 16 : 28)}",
+      paddingTop:"${roundScreen ? '13vh' : (viewport.height < 530 ? 12 : 22)}",
+      paddingBottom:"${roundScreen ? '13vh' : 14}",
       items:[
-        screenText(title, '${viewport.width < 700 ? 19 : 34}', color, {
-          fontWeight:'700', paddingBottom:'${viewport.height < 350 ? 6 : 16}'
-        }),
-        ...entries
+        screenText('${schedule.title}', '${roundScreen || viewport.height < 530 ? 26 : 36}', '#FFFFFF',
+          {fontWeight:'700', textAlign:"${roundScreen ? 'center' : 'left'}"}),
+        screenText("${roundScreen ? 'PVPC · céntimos/kWh' : 'PVPC peninsular · céntimos/kWh · sin impuestos'}",
+          14, '#C5D3E3', {textAlign:"${roundScreen ? 'center' : 'left'}"}),
+        {
+          type:'Container', direction:'row', spacing:5, justifyContent:"${roundScreen ? 'center' : 'start'}",
+          items:[
+            screenText('Más baratas', 14, tariffColors.low.text, {fontWeight:'700'}),
+            screenText('Más caras', 14, tariffColors.high.text, {fontWeight:'700', spacing:16})
+          ]
+        },
+        {
+          type:'Container', width:'100%', spacing:9,
+          data:'${roundScreen ? schedule.list : (viewport.width < 720 ? schedule.pairs : schedule.grid)}',
+          items:[row]
+        },
+        screenText('${schedule.nextHint}', 14, tariffColors.low.text,
+          {when:"${!roundScreen && schedule.nextHint != ''}", spacing:8})
       ]
     }
   };
 }
 function priceScreen(rows, day, label, now, next) {
-  const green = '#75F5AF';
-  const red = '#FFA49D';
-  const low = [...rows].sort((a, b) => a.p - b.p || a.t - b.t).slice(0, 3);
-  const high = [...rows].sort((a, b) => b.p - a.p || a.t - b.t).slice(0, 3);
+  const cheap = [...rows].sort((a,b) => a.p - b.p || a.t - b.t).slice(0,3);
+  const expensive = [...rows].sort((a,b) => b.p - a.p || b.t - a.t).slice(0,3);
+  const cheapTimes = new Set(cheap.map(row => row.t));
+  const expensiveTimes = new Set(expensive.map(row => row.t));
+  const slots = rows.map(row => {
+    const band = cheapTimes.has(row.t) ? 'low' : expensiveTimes.has(row.t) ? 'high' : 'neutral';
+    return {range:screenRange(row, rows), price:cents(row.p), ...tariffColors[band]};
+  });
   const [, month, date] = day.split('-');
   const title = (label === 'hoy' ? 'Hoy' : 'Mañana') + ' · ' + date + '/' + month;
-  const nextHint = next && low[0].t + 3600000 <= now.getTime()
+  const nextHint = next && cheap[0].t + 3600000 <= now.getTime()
     ? 'Más barata de las que quedan: ' + screenRange(next, rows) + ' · ' + cents(next.p) + ' ¢/kWh'
     : '';
-  const compactRows = [
-    {title:'Más barata', row:low[0], color:green},
-    {title:'Más cara', row:high[0], color:red}
-  ];
-  const compact = {
-    when:"${viewport.shape == 'round' || viewport.width < 420}",
-    type:'Container', width:'100%', height:'100%', alignItems:'center', justifyContent:'center',
-    items:[
-      screenText(title, 22, '#FFFFFF', {fontWeight:'700'}),
-      ...compactRows.map(({title, row, color}) => ({
-        type:'Container', alignItems:'center', spacing:8,
-        items:[
-          screenText(title, 15, color, {fontWeight:'700'}),
-          screenText(screenRange(row, rows) + ' · ' + cents(row.p) + ' ¢', 17, color)
-        ]
-      })),
-      screenText('PVPC · ¢/kWh', 13, '#CCD6E4', {spacing:8})
-    ]
-  };
-  const landscape = {
-    type:'Container', width:'100%', height:'100%', justifyContent:'center',
-    padding:'${viewport.width < 700 ? 14 : 36}',
-    items:[
-      screenText(title, '${viewport.width < 700 ? 25 : 46}', '#FFFFFF', {fontWeight:'700'}),
-      screenText('PVPC peninsular · céntimos/kWh · sin impuestos',
-        '${viewport.width < 700 ? 13 : 20}', '#C5D3E3', {spacing:3}),
-      {
-        type:'Container', direction:'row', grow:1, spacing:'${viewport.height < 350 ? 8 : 16}',
-        items:[
-          pricePanel('Más baratas', green, '#12382E', low, rows),
-          {...pricePanel('Más caras', red, '#4A232B', high, rows), spacing:10}
-        ]
-      },
-      ...(nextHint ? [screenText(nextHint, '${viewport.width < 700 ? 13 : 19}', green, {spacing:8})] : [])
-    ]
-  };
   return {
-    type:'Alexa.Presentation.APL.RenderDocument',
-    token:'precio-luz-casa-' + day,
+    type:'Alexa.Presentation.APL.RenderDocument', token:'precio-luz-casa-' + day,
     document:{
       type:'APL', version:'1.4', theme:'dark',
       mainTemplate:{
+        parameters:['schedule'],
         item:{
-          type:'Frame', width:'100%', height:'100%', backgroundColor:'#101A2A',
-          items:[compact, landscape]
+          type:'Frame', width:'100vw', height:'100vh', backgroundColor:'#101A2A',
+          item:scheduleView()
         }
+      }
+    },
+    datasources:{
+      schedule:{
+        title, nextHint,
+        list:groupSlots(slots, 1),
+        pairs:groupSlots(slots, 2),
+        grid:groupSlots(slots, 4)
       }
     }
   };
