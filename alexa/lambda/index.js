@@ -81,6 +81,27 @@ const tariffColors = {
   middle: {text:'#FFC277', background:'#4A3019'}
 };
 
+function mixColor(from, to, amount) {
+  const channels = from.slice(1).match(/../g).map((channel, index) => {
+    const start = parseInt(channel, 16);
+    const end = parseInt(to.slice(1 + index * 2, 3 + index * 2), 16);
+    return Math.round(start + (end - start) * amount).toString(16).padStart(2, '0');
+  });
+  return '#' + channels.join('');
+}
+function middleColors(price, minimum, median, maximum) {
+  const orange = tariffColors.middle;
+  if (price === median) return orange;
+  const edge = price < median ? minimum : maximum;
+  const target = price < median ? tariffColors.low : tariffColors.high;
+  // Keep the solid green and red reserved for the three extreme hours.
+  const amount = 0.84 * Math.abs(price - median) / Math.abs(edge - median);
+  return {
+    text:mixColor(orange.text, target.text, amount),
+    background:mixColor(orange.background, target.background, amount)
+  };
+}
+
 function groupSlots(slots, columns) {
   const groups = [];
   for (let index = 0; index < slots.length; index += columns) {
@@ -141,13 +162,21 @@ function scheduleView() {
   };
 }
 function priceScreen(rows, day, label, now, next) {
-  const cheap = [...rows].sort((a,b) => a.p - b.p || a.t - b.t).slice(0,3);
-  const expensive = [...rows].sort((a,b) => b.p - a.p || b.t - a.t).slice(0,3);
+  const ranked = [...rows].sort((a,b) => a.p - b.p || a.t - b.t);
+  const cheap = ranked.slice(0,3);
+  const expensive = ranked.slice(-3);
+  const middle = ranked.slice(3,-3);
+  const minimum = middle[0].p;
+  const maximum = middle[middle.length - 1].p;
+  const median = (middle[Math.floor((middle.length - 1) / 2)].p + middle[Math.floor(middle.length / 2)].p) / 2;
   const cheapTimes = new Set(cheap.map(row => row.t));
   const expensiveTimes = new Set(expensive.map(row => row.t));
   const slots = rows.map(row => {
-    const band = cheapTimes.has(row.t) ? 'low' : expensiveTimes.has(row.t) ? 'high' : 'middle';
-    return {range:screenRange(row, rows), price:cents(row.p), ...tariffColors[band]};
+    let colors;
+    if (cheapTimes.has(row.t)) colors = tariffColors.low;
+    else if (expensiveTimes.has(row.t)) colors = tariffColors.high;
+    else colors = middleColors(row.p, minimum, median, maximum);
+    return {range:screenRange(row, rows), price:cents(row.p), ...colors};
   });
   const [, month, date] = day.split('-');
   const title = (label === 'hoy' ? 'Hoy' : 'Mañana') + ' · ' + date + '/' + month;
