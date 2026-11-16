@@ -26,7 +26,11 @@
             "precios de hoy",
             "qué horas debo evitar hoy",
             "precio de la electricidad hoy",
-            "cuándo pongo la lavadora hoy"
+            "cuándo pongo la lavadora hoy",
+            "hoy",
+            "precio hoy",
+            "cuánto cuesta la luz",
+            "horas más baratas"
           ]
         },
         {
@@ -36,7 +40,10 @@
             "precios de mañana",
             "qué horas debo evitar mañana",
             "precio de la electricidad mañana",
-            "cuándo pongo la lavadora mañana"
+            "cuándo pongo la lavadora mañana",
+            "mañana",
+            "precio mañana",
+            "y mañana"
           ]
         }
       ]

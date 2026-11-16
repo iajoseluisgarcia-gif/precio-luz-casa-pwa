@@ -1,0 +1,26 @@
+const assert=require('assert/strict');
+const {localDate,expectedHours,validate,prices,handle}=require('../alexa/lambda/index')._test;
+(async()=>{
+ assert.equal(localDate(1,new Date('2026-12-31T23:30:00Z')),'2027-01-02');
+ assert.equal(expectedHours('2026-03-29').length,23);
+ assert.equal(expectedHours('2026-10-25').length,25);
+ const day='2026-11-16',hours=expectedHours(day).map(x=>({hora:x.h,pvpc:0.1+x.h/1000}));
+ const valid={fecha:day,zona:'PCB',unidad:'€/kWh',horas:hours};
+ assert.throws(()=>validate(Array(24).fill({h:0,p:0.1}),day));
+ assert.throws(()=>validate(hours.map((x,i)=>({h:x.hora,p:i===2?null:x.pvpc})),day));
+ assert.equal(await prices(day,0,async()=>({...valid,fecha:'2026-11-15'})),null);
+ let calls=0;
+ const fallback=await prices(day,0,async url=>{calls++;if(url.includes('preciluz'))throw Error('offline');return {success:true,data:{date:day,market:'pvpc',published:true,stepMinutes:60,slots:expectedHours(day).map(x=>({startsAt:new Date(x.t).toISOString(),endsAt:new Date(x.t+3600000).toISOString(),eurKwh:0.2}))}};});
+ assert.equal(calls,2);assert.equal(fallback.length,24);
+ const event=name=>({request:{type:'IntentRequest',intent:{name}}});
+ const now=new Date('2026-11-16T09:00:00Z');
+ const fetch=async()=>valid;
+ const today=await handle(event('PrecioHoyIntent'),now,fetch);
+ assert.match(today.response.outputSpeech.text,/fue de las 0 a las 1/);
+ assert.match(today.response.outputSpeech.text,/quedan/);
+ assert.match((await handle(event('PrecioMananaIntent'),now,fetch)).response.outputSpeech.text,/no tengo precios verificados/);
+ assert.equal((await handle(event('AMAZON.FallbackIntent'),now,()=>{throw Error('must not fetch');})).response.shouldEndSession,false);
+ assert.deepEqual((await handle({request:{type:'SessionEndedRequest'}},now,fetch)).response,{});
+ assert.match((await handle(event('AMAZON.StopIntent'),now,fetch)).response.outputSpeech.text,/Hasta luego/);
+ console.log('Alexa: 12 comprobaciones OK (fecha, DST, datos inválidos, fallback, hoy, mañana, ayuda y cierre).');
+})().catch(e=>{console.error(e);process.exitCode=1;});
