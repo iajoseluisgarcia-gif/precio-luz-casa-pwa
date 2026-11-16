@@ -78,7 +78,7 @@ function screenRange(row, rows) {
 const tariffColors = {
   low: {text:'#75F5AF', background:'#12382E'},
   high: {text:'#FFA49D', background:'#4A232B'},
-  neutral: {text:'#EEF2F8', background:'#202F43'}
+  middle: {text:'#FFC277', background:'#4A3019'}
 };
 
 function groupSlots(slots, columns) {
@@ -125,7 +125,8 @@ function scheduleView() {
           type:'Container', direction:'row', spacing:5, justifyContent:"${roundScreen ? 'center' : 'start'}",
           items:[
             screenText('Más baratas', 14, tariffColors.low.text, {fontWeight:'700'}),
-            screenText('Más caras', 14, tariffColors.high.text, {fontWeight:'700', spacing:16})
+            screenText('Intermedias', 14, tariffColors.middle.text, {fontWeight:'700', spacing:12}),
+            screenText('Más caras', 14, tariffColors.high.text, {fontWeight:'700', spacing:12})
           ]
         },
         {
@@ -145,7 +146,7 @@ function priceScreen(rows, day, label, now, next) {
   const cheapTimes = new Set(cheap.map(row => row.t));
   const expensiveTimes = new Set(expensive.map(row => row.t));
   const slots = rows.map(row => {
-    const band = cheapTimes.has(row.t) ? 'low' : expensiveTimes.has(row.t) ? 'high' : 'neutral';
+    const band = cheapTimes.has(row.t) ? 'low' : expensiveTimes.has(row.t) ? 'high' : 'middle';
     return {range:screenRange(row, rows), price:cents(row.p), ...tariffColors[band]};
   });
   const [, month, date] = day.split('-');
