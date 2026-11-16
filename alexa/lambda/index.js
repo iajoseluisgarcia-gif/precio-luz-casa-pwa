@@ -62,6 +62,102 @@ function fmt(row,rows) {
   return 'de las '+row.h+' a las '+end+suffix;
 }
 function cents(p){return (p*100).toLocaleString('es-ES',{maximumFractionDigits:3});}
+
+function screenText(text, fontSize, color, extra = {}) {
+  return {type:'Text', text, fontSize, color, maxLines:1, ...extra};
+}
+function screenRange(row, rows) {
+  const label = t => String(hourFormatter.format(new Date(t))).padStart(2, '0') + ':00';
+  const repeats = rows.filter(item => item.h === row.h);
+  const occurrence = repeats.length > 1 ? (repeats[0].t === row.t ? ' (1.ª)' : ' (2.ª)') : '';
+  return label(row.t) + '–' + label(row.t + 3600000) + occurrence;
+}
+function pricePanel(title, color, backgroundColor, selected, allRows) {
+  const entries = selected.map((row, index) => ({
+    type:'Container',
+    direction:'row',
+    justifyContent:'spaceBetween',
+    alignItems:'center',
+    spacing:index ? '${viewport.height < 350 ? 5 : 12}' : 0,
+    items:[
+      screenText(screenRange(row, allRows), '${viewport.width < 700 ? 16 : 27}', '#FFFFFF', {fontWeight:'500'}),
+      screenText(cents(row.p), '${viewport.width < 700 ? 18 : 31}', color, {fontWeight:'700', spacing:6})
+    ]
+  }));
+  return {
+    type:'Frame', width:0, grow:1, height:'100%', backgroundColor, borderRadius:18,
+    item:{
+      type:'Container', width:'100%', height:'100%',
+      padding:'${viewport.width < 700 ? 12 : 26}', justifyContent:'center',
+      items:[
+        screenText(title, '${viewport.width < 700 ? 19 : 34}', color, {
+          fontWeight:'700', paddingBottom:'${viewport.height < 350 ? 6 : 16}'
+        }),
+        ...entries
+      ]
+    }
+  };
+}
+function priceScreen(rows, day, label, now, next) {
+  const green = '#75F5AF';
+  const red = '#FFA49D';
+  const low = [...rows].sort((a, b) => a.p - b.p || a.t - b.t).slice(0, 3);
+  const high = [...rows].sort((a, b) => b.p - a.p || a.t - b.t).slice(0, 3);
+  const [, month, date] = day.split('-');
+  const title = (label === 'hoy' ? 'Hoy' : 'Mañana') + ' · ' + date + '/' + month;
+  const nextHint = next && low[0].t + 3600000 <= now.getTime()
+    ? 'Más barata de las que quedan: ' + screenRange(next, rows) + ' · ' + cents(next.p) + ' ¢/kWh'
+    : '';
+  const compactRows = [
+    {title:'Más barata', row:low[0], color:green},
+    {title:'Más cara', row:high[0], color:red}
+  ];
+  const compact = {
+    when:"${viewport.shape == 'round' || viewport.width < 420}",
+    type:'Container', width:'100%', height:'100%', alignItems:'center', justifyContent:'center',
+    items:[
+      screenText(title, 22, '#FFFFFF', {fontWeight:'700'}),
+      ...compactRows.map(({title, row, color}) => ({
+        type:'Container', alignItems:'center', spacing:8,
+        items:[
+          screenText(title, 15, color, {fontWeight:'700'}),
+          screenText(screenRange(row, rows) + ' · ' + cents(row.p) + ' ¢', 17, color)
+        ]
+      })),
+      screenText('PVPC · ¢/kWh', 13, '#CCD6E4', {spacing:8})
+    ]
+  };
+  const landscape = {
+    type:'Container', width:'100%', height:'100%', justifyContent:'center',
+    padding:'${viewport.width < 700 ? 14 : 36}',
+    items:[
+      screenText(title, '${viewport.width < 700 ? 25 : 46}', '#FFFFFF', {fontWeight:'700'}),
+      screenText('PVPC peninsular · céntimos/kWh · sin impuestos',
+        '${viewport.width < 700 ? 13 : 20}', '#C5D3E3', {spacing:3}),
+      {
+        type:'Container', direction:'row', grow:1, spacing:'${viewport.height < 350 ? 8 : 16}',
+        items:[
+          pricePanel('Más baratas', green, '#12382E', low, rows),
+          {...pricePanel('Más caras', red, '#4A232B', high, rows), spacing:10}
+        ]
+      },
+      ...(nextHint ? [screenText(nextHint, '${viewport.width < 700 ? 13 : 19}', green, {spacing:8})] : [])
+    ]
+  };
+  return {
+    type:'Alexa.Presentation.APL.RenderDocument',
+    token:'precio-luz-casa-' + day,
+    document:{
+      type:'APL', version:'1.4', theme:'dark',
+      mainTemplate:{
+        item:{
+          type:'Frame', width:'100%', height:'100%', backgroundColor:'#101A2A',
+          items:[compact, landscape]
+        }
+      }
+    }
+  };
+}
 function speech(text,keepOpen=false) {
   const response={outputSpeech:{type:'PlainText',text},card:{type:'Simple',title:'Precio Luz Casa',content:text},shouldEndSession:!keepOpen};
   if(keepOpen)response.reprompt={outputSpeech:{type:'PlainText',text:'Puedes decir precios de hoy o precios de mañana.'}};
@@ -79,11 +175,19 @@ async function handle(event,now=new Date(),fetchJson=get) {
     if(!rows)return speech('Aún no tengo precios verificados de '+label+'. Prueba más tarde.');
     const low=rows.reduce((a,b)=>b.p<a.p?b:a),high=rows.reduce((a,b)=>b.p>a.p?b:a);
     let text='Para '+label+', la hora más barata '+(!offset&&low.t+3600000<=now.getTime()?'fue ':'es ')+fmt(low,rows)+', a '+cents(low.p)+' céntimos por kilovatio hora. La más cara es '+fmt(high,rows)+', a '+cents(high.p)+' céntimos.';
+    let next;
     if(!offset&&low.t+3600000<=now.getTime()){
       const remaining=rows.filter(x=>x.t>=now.getTime());
-      if(remaining.length){const next=remaining.reduce((a,b)=>b.p<a.p?b:a);text+=' De las horas completas que quedan, la más barata es '+fmt(next,rows)+', a '+cents(next.p)+' céntimos.';}
+      if(remaining.length){
+        next=remaining.reduce((a,b)=>b.p<a.p?b:a);
+        text+=' De las horas completas que quedan, la más barata es '+fmt(next,rows)+', a '+cents(next.p)+' céntimos.';
+      }
     }
-    return speech(text+' Son precios PVPC peninsulares de energía sin impuestos; pueden ser distintos de tu contrato.');
+    const result = speech(text+' Son precios PVPC peninsulares de energía sin impuestos; pueden ser distintos de tu contrato.');
+    if(event.context?.System?.device?.supportedInterfaces?.['Alexa.Presentation.APL']){
+      result.response.directives = [priceScreen(rows, day, label, now, next)];
+    }
+    return result;
   }catch(e){return speech('No puedo verificar los precios en este momento. Inténtalo después.');}
 }
 exports.handler=event=>handle(event);
